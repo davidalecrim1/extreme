@@ -28,4 +28,8 @@ connection_pool:
 # Logging configuration
 logging:
   enabled: true
-  level: "info"  # debug, info, warn, error 
+  level: "info"  # debug, info, warn, error
+
+pre_warm:
+  enabled: true
+  requests_per_backend: 50

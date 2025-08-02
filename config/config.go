@@ -20,6 +20,7 @@ type Config struct {
 	Backends       []string             `mapstructure:"backends"`
 	ConnectionPool ConnectionPoolConfig `mapstructure:"connection_pool"`
 	Logging        LoggingConfig        `mapstructure:"logging"`
+	PreWarm        PreWarmConfig        `mapstructure:"pre_warm"`
 }
 
 // ServerConfig defines the core server settings including address binding,
@@ -55,6 +56,12 @@ type ConnectionPoolConfig struct {
 type LoggingConfig struct {
 	Enabled bool   `mapstructure:"enabled"`
 	Level   string `mapstructure:"level"`
+}
+
+// PreWarmConfig contains settings for pre-warming connections to backend servers.
+type PreWarmConfig struct {
+	Enabled            bool `mapstructure:"enabled"`
+	RequestsPerBackend int  `mapstructure:"requests_per_backend"`
 }
 
 // GetLevel converts the string log level from the configuration

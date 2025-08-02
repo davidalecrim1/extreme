@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/davidalecrim/extreme/config"
 	"github.com/valyala/fasthttp"
@@ -42,7 +43,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 			return nil, fmt.Errorf("invalid backend URL %s: %v", backend, err)
 		}
 
-		clients[backend] = &fasthttp.HostClient{
+		client := &fasthttp.HostClient{
 			Addr:                u.Host,
 			IsTLS:               u.Scheme == "https",
 			MaxConns:            cfg.ConnectionPool.MaxConnsPerHost,
@@ -54,6 +55,30 @@ func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 			DisablePathNormalizing:        true,
 			DisableHeaderNamesNormalizing: true,
 		}
+
+		if cfg.PreWarm.Enabled {
+			preWarmCount := cfg.PreWarm.RequestsPerBackend
+			for range preWarmCount {
+				// Create a dummy request to establish connection and keep it alive
+				req := fasthttp.AcquireRequest()
+				resp := fasthttp.AcquireResponse()
+				req.SetHost(u.Host)
+				req.SetRequestURI("/")
+				req.Header.SetMethod(fasthttp.MethodHead)
+
+				if err := client.DoTimeout(req, resp, 2*time.Second); err != nil {
+					logger.Warn("failed to pre-warm connection",
+						"backend", backend,
+						"error", err,
+					)
+				}
+
+				fasthttp.ReleaseRequest(req)
+				fasthttp.ReleaseResponse(resp)
+			}
+		}
+
+		clients[backend] = client
 	}
 
 	p := &Proxy{
