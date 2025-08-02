@@ -1,13 +1,12 @@
+VERSION=v0.4.0
+
 build:
-	docker build -t extreme-proxy:latest .
+	docker build -t davidalecrim1/extreme-proxy:$(VERSION) .
 
-publish-amd64:
-	docker buildx build --platform linux/amd64 -t davidalecrim1/extreme-proxy:v.0.1.0 . --push
+setup-buildx:
+	docker buildx create --name mybuilder --use || true
 
-publish-arm64:
-	docker buildx build --platform linux/arm64 -t davidalecrim1/extreme-proxy:v.0.1.0 . --push
-
-publish-all:
-	make build
-	make publish-amd64
-	make publish-arm64
+publish: setup-buildx
+	docker buildx build --platform linux/amd64,linux/arm64 \
+		-t davidalecrim1/extreme-proxy:$(VERSION) \
+		--push .

@@ -8,7 +8,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 go build -o proxy ./cmd/proxy
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o proxy ./cmd/proxy
 
 FROM alpine:latest
 
