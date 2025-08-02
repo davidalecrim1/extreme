@@ -22,6 +22,7 @@ type Proxy struct {
 	config         *config.Config
 	clients        map[string]*fasthttp.HostClient
 	backends       []string
+	backendURLs    map[string]*url.URL
 	currentBackend uint32
 	server         *fasthttp.Server
 	logger         *slog.Logger
@@ -32,6 +33,7 @@ type Proxy struct {
 // optimized settings for high performance and minimal latency.
 func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 	clients := make(map[string]*fasthttp.HostClient, len(cfg.Backends))
+	backendURLs := make(map[string]*url.URL, len(cfg.Backends))
 
 	for _, backend := range cfg.Backends {
 		if !strings.HasPrefix(backend, "http://") && !strings.HasPrefix(backend, "https://") {
@@ -42,6 +44,8 @@ func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid backend URL %s: %v", backend, err)
 		}
+
+		backendURLs[backend] = u
 
 		client := &fasthttp.HostClient{
 			Addr:                u.Host,
@@ -54,6 +58,16 @@ func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 			NoDefaultUserAgentHeader:      true,
 			DisablePathNormalizing:        true,
 			DisableHeaderNamesNormalizing: true,
+
+			MaxConnWaitTimeout: 200 * time.Millisecond,
+			MaxConnDuration:    30 * time.Second,
+			ReadBufferSize:     32 * 1024,
+			WriteBufferSize:    32 * 1024,
+
+			Dial: (&fasthttp.TCPDialer{
+				Concurrency:      4096,
+				DNSCacheDuration: 1 * time.Hour,
+			}).Dial,
 		}
 
 		if cfg.PreWarm.Enabled {
@@ -82,10 +96,11 @@ func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 	}
 
 	p := &Proxy{
-		config:   cfg,
-		backends: cfg.Backends,
-		clients:  clients,
-		logger:   logger,
+		config:      cfg,
+		backends:    cfg.Backends,
+		clients:     clients,
+		backendURLs: backendURLs,
+		logger:      logger,
 	}
 
 	p.server = &fasthttp.Server{
@@ -104,6 +119,16 @@ func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 		DisablePreParseMultipartForm:  true,
 		StreamRequestBody:             true,
 		GetOnly:                       false,
+
+		Concurrency:        cfg.Server.MaxConnections,
+		ReadBufferSize:     32 * 1024,
+		WriteBufferSize:    32 * 1024,
+		MaxRequestBodySize: 512 * 1024,
+		DisableKeepalive:   false,
+		IdleTimeout:        10 * time.Second,
+
+		CloseOnShutdown:       true,
+		SecureErrorLogMessage: true,
 	}
 
 	return p, nil
@@ -124,7 +149,7 @@ func (p *Proxy) handleRequest(ctx *fasthttp.RequestCtx) {
 	req := &ctx.Request
 	resp := &ctx.Response
 
-	backendURL, _ := url.Parse(backend)
+	backendURL := p.backendURLs[backend]
 	req.SetHost(backendURL.Host)
 
 	if err := client.Do(req, resp); err != nil {
@@ -138,7 +163,8 @@ func (p *Proxy) handleRequest(ctx *fasthttp.RequestCtx) {
 				},
 			)
 		}
-		ctx.Error("Proxy error", fasthttp.StatusBadGateway)
+		ctx.SetStatusCode(fasthttp.StatusBadGateway)
+		ctx.SetBodyString("Gateway Error")
 		return
 	}
 }

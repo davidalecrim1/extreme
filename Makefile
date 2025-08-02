@@ -1,4 +1,4 @@
-VERSION=v0.4.0
+VERSION=v0.5.0
 
 build:
 	docker build -t davidalecrim1/extreme-proxy:$(VERSION) .
