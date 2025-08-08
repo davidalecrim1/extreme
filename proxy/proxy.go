@@ -60,13 +60,12 @@ func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 			DisablePathNormalizing:        true,
 			DisableHeaderNamesNormalizing: true,
 
-			MaxConnWaitTimeout: 1 * time.Millisecond,
-			MaxConnDuration:    30 * time.Second,
-			ReadBufferSize:     4 * 1024,
-			WriteBufferSize:    4 * 1024,
+			MaxConnDuration: 90 * time.Second,
+			ReadBufferSize:  4 * 1024,
+			WriteBufferSize: 4 * 1024,
 
 			Dial: (&fasthttp.TCPDialer{
-				Concurrency:      256,
+				Concurrency:      cfg.Server.Concurrency,
 				DNSCacheDuration: 1 * time.Hour,
 			}).Dial,
 		}
@@ -82,22 +81,31 @@ func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 					// Create a dummy request to establish connection and keep it alive
 					req := fasthttp.AcquireRequest()
 					resp := fasthttp.AcquireResponse()
-					defer fasthttp.ReleaseRequest(req)
-					defer fasthttp.ReleaseResponse(resp)
 
 					req.SetHost(u.Host)
-					req.SetRequestURI("/")
 					req.Header.SetMethod(fasthttp.MethodHead)
 
-					if err := client.DoTimeout(req, resp, 2*time.Second); err != nil {
+					if err := client.Do(req, resp); err != nil {
 						logger.Warn("failed to pre-warm connection",
 							"backend", backend,
 							"error", err,
+							"request", req.String(),
 						)
 					}
+
+					fasthttp.ReleaseRequest(req)
+					fasthttp.ReleaseResponse(resp)
 				}()
 			}
+
 			wg.Wait()
+
+			if cfg.Logging.Enabled {
+				logger.Info("pre-warmed connections",
+					"backend", backend,
+					"count", preWarmCount*len(cfg.Backends),
+				)
+			}
 		}
 
 		clients[backend] = client

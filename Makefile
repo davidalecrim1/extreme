@@ -1,10 +1,17 @@
-VERSION=v0.6.0
+VERSION=v0.6.13
 
 build:
 	docker build -t davidalecrim1/extreme-proxy:$(VERSION) .
 
 publish:
-	docker buildx build --builder default \
-		--platform linux/amd64,linux/arm64 \
-		-t davidalecrim1/extreme-proxy:$(VERSION) \
-		--push .
+	docker buildx build \
+	--platform linux/amd64 \
+	-t davidalecrim1/extreme-proxy:$(VERSION) \
+	--push \
+	-f Dockerfile .
+	
+	docker buildx build \
+	--platform linux/arm64 \
+	-t davidalecrim1/extreme-proxy:$(VERSION) \
+	--push \
+	-f Dockerfile .

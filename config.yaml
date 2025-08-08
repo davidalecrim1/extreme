@@ -2,11 +2,11 @@
 
 # Server settings
 server:
-  listen_address: ":8080"
+  listen_address: ":9999"
   read_timeout: "2s"      
   write_timeout: "2s"
   max_connections_per_ip: 1000
-  concurrency: 256
+  concurrency: 1000
 
 # Keep-alive settings
 # - enabled and client_timeout control TCP keep-alive for incoming connections
@@ -19,8 +19,8 @@ keep_alive:
 
 # Backend servers to forward requests to
 backends:
-  - "http://localhost:8081"
-  - "http://localhost:8082"
+  - "http://go-backend-1:80"
+  - "http://go-backend-2:80"
 
 # Connection pool settings for backend connections
 connection_pool:
