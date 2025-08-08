@@ -103,7 +103,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 			if cfg.Logging.Enabled {
 				logger.Info("pre-warmed connections",
 					"backend", backend,
-					"count", preWarmCount*len(cfg.Backends),
+					"count", preWarmCount,
 				)
 			}
 		}
