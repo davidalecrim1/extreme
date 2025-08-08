@@ -26,10 +26,11 @@ type Config struct {
 // ServerConfig defines the core server settings including address binding,
 // timeouts, and connection limits.
 type ServerConfig struct {
-	ListenAddress  string        `mapstructure:"listen_address"`
-	ReadTimeout    time.Duration `mapstructure:"read_timeout"`
-	WriteTimeout   time.Duration `mapstructure:"write_timeout"`
-	MaxConnections int           `mapstructure:"max_connections"`
+	ListenAddress       string        `mapstructure:"listen_address"`
+	ReadTimeout         time.Duration `mapstructure:"read_timeout"`
+	WriteTimeout        time.Duration `mapstructure:"write_timeout"`
+	MaxConnectionsPerIP int           `mapstructure:"max_connections_per_ip"`
+	Concurrency         int           `mapstructure:"concurrency"`
 }
 
 // KeepAliveConfig contains settings for connection keep-alive behavior

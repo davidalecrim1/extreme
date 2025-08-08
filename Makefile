@@ -1,12 +1,10 @@
-VERSION=v0.5.0
+VERSION=v0.6.0
 
 build:
 	docker build -t davidalecrim1/extreme-proxy:$(VERSION) .
 
-setup-buildx:
-	docker buildx create --name mybuilder --use || true
-
-publish: setup-buildx
-	docker buildx build --platform linux/amd64,linux/arm64 \
+publish:
+	docker buildx build --builder default \
+		--platform linux/amd64,linux/arm64 \
 		-t davidalecrim1/extreme-proxy:$(VERSION) \
 		--push .

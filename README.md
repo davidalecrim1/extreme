@@ -28,7 +28,7 @@ keep_alive:
   enabled: true
   client_timeout: "60s"
   backend_timeout: "60s"
-  max_requests_per_conn: 10000
+  max_requests_per_conn: 1000
 
 backends:
   - "http://localhost:8081"
@@ -68,6 +68,10 @@ The proxy will start and begin forwarding requests to the configured backends in
 
 - Go 1.24 or later
 - Backend servers must support HTTP/1.1 
+
+## Versions
+
+The current version that showned the best performance results for **[Rinha de Backend](https://github.com/davidalecrim1/rinha-with-go-2025)** is **v0.4.0**.
 
 ## License
 

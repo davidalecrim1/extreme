@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -59,37 +60,44 @@ func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 			DisablePathNormalizing:        true,
 			DisableHeaderNamesNormalizing: true,
 
-			MaxConnWaitTimeout: 200 * time.Millisecond,
+			MaxConnWaitTimeout: 1 * time.Millisecond,
 			MaxConnDuration:    30 * time.Second,
-			ReadBufferSize:     32 * 1024,
-			WriteBufferSize:    32 * 1024,
+			ReadBufferSize:     4 * 1024,
+			WriteBufferSize:    4 * 1024,
 
 			Dial: (&fasthttp.TCPDialer{
-				Concurrency:      4096,
+				Concurrency:      256,
 				DNSCacheDuration: 1 * time.Hour,
 			}).Dial,
 		}
 
 		if cfg.PreWarm.Enabled {
 			preWarmCount := cfg.PreWarm.RequestsPerBackend
+			var wg sync.WaitGroup
+			wg.Add(preWarmCount)
+
 			for range preWarmCount {
-				// Create a dummy request to establish connection and keep it alive
-				req := fasthttp.AcquireRequest()
-				resp := fasthttp.AcquireResponse()
-				req.SetHost(u.Host)
-				req.SetRequestURI("/")
-				req.Header.SetMethod(fasthttp.MethodHead)
+				go func() {
+					defer wg.Done()
+					// Create a dummy request to establish connection and keep it alive
+					req := fasthttp.AcquireRequest()
+					resp := fasthttp.AcquireResponse()
+					defer fasthttp.ReleaseRequest(req)
+					defer fasthttp.ReleaseResponse(resp)
 
-				if err := client.DoTimeout(req, resp, 2*time.Second); err != nil {
-					logger.Warn("failed to pre-warm connection",
-						"backend", backend,
-						"error", err,
-					)
-				}
+					req.SetHost(u.Host)
+					req.SetRequestURI("/")
+					req.Header.SetMethod(fasthttp.MethodHead)
 
-				fasthttp.ReleaseRequest(req)
-				fasthttp.ReleaseResponse(resp)
+					if err := client.DoTimeout(req, resp, 2*time.Second); err != nil {
+						logger.Warn("failed to pre-warm connection",
+							"backend", backend,
+							"error", err,
+						)
+					}
+				}()
 			}
+			wg.Wait()
 		}
 
 		clients[backend] = client
@@ -107,7 +115,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 		Handler:                       p.handleRequest,
 		ReadTimeout:                   cfg.Server.ReadTimeout,
 		WriteTimeout:                  cfg.Server.WriteTimeout,
-		MaxConnsPerIP:                 cfg.Server.MaxConnections,
+		MaxConnsPerIP:                 cfg.Server.MaxConnectionsPerIP,
 		MaxRequestsPerConn:            cfg.KeepAlive.MaxRequestsPerConn,
 		DisableHeaderNamesNormalizing: true,
 		ReduceMemoryUsage:             true,
@@ -120,7 +128,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 		StreamRequestBody:             true,
 		GetOnly:                       false,
 
-		Concurrency:        cfg.Server.MaxConnections,
+		Concurrency:        cfg.Server.Concurrency,
 		ReadBufferSize:     32 * 1024,
 		WriteBufferSize:    32 * 1024,
 		MaxRequestBodySize: 512 * 1024,

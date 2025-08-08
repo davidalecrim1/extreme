@@ -5,7 +5,8 @@ server:
   listen_address: ":8080"
   read_timeout: "2s"      
   write_timeout: "2s"
-  max_connections: 100000
+  max_connections_per_ip: 1000
+  concurrency: 256
 
 # Keep-alive settings
 # - enabled and client_timeout control TCP keep-alive for incoming connections
@@ -14,7 +15,7 @@ keep_alive:
   enabled: true
   client_timeout: "30s"
   backend_timeout: "30s"
-  max_requests_per_conn: 1000
+  max_requests_per_conn: 10
 
 # Backend servers to forward requests to
 backends:
@@ -23,7 +24,7 @@ backends:
 
 # Connection pool settings for backend connections
 connection_pool:
-  max_conns_per_host: 5000
+  max_conns_per_host: 200
 
 # Logging configuration
 logging:
