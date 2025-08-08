@@ -213,5 +213,15 @@ func (p *Proxy) Shutdown() error {
 	if p.config.Logging.Enabled {
 		p.logger.Info("shutting down proxy server")
 	}
-	return p.server.Shutdown()
+
+	err := p.server.Shutdown()
+
+	for backend, client := range p.clients {
+		if p.config.Logging.Enabled {
+			p.logger.Debug("closing idle connections for backend", "backend", backend)
+		}
+		client.CloseIdleConnections()
+	}
+
+	return err
 }
