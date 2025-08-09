@@ -4,11 +4,8 @@
 package proxy
 
 import (
-	"fmt"
 	"log/slog"
-	"net/url"
-	"strings"
-	"sync"
+	"net"
 	"sync/atomic"
 	"time"
 
@@ -22,8 +19,6 @@ import (
 type Proxy struct {
 	config         *config.Config
 	clients        map[string]*fasthttp.HostClient
-	backends       []string
-	backendURLs    map[string]*url.URL
 	currentBackend uint32
 	server         *fasthttp.Server
 	logger         *slog.Logger
@@ -33,118 +28,27 @@ type Proxy struct {
 // configuration and logger. It sets up the fasthttp client and server with
 // optimized settings for high performance and minimal latency.
 func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
-	clients := make(map[string]*fasthttp.HostClient, len(cfg.Backends))
-	backendURLs := make(map[string]*url.URL, len(cfg.Backends))
+	clients := make(map[string]*fasthttp.HostClient, len(cfg.BackendSockets))
 
-	for _, backend := range cfg.Backends {
-		if !strings.HasPrefix(backend, "http://") && !strings.HasPrefix(backend, "https://") {
-			return nil, fmt.Errorf("backend URL must start with http:// or https://: %s", backend)
-		}
-
-		u, err := url.Parse(backend)
-		if err != nil {
-			return nil, fmt.Errorf("invalid backend URL %s: %v", backend, err)
-		}
-
-		backendURLs[backend] = u
-
+	for _, backend := range cfg.BackendSockets {
 		client := &fasthttp.HostClient{
-			Addr:                u.Host,
-			IsTLS:               u.Scheme == "https",
-			MaxConns:            cfg.ConnectionPool.MaxConnsPerHost,
-			MaxIdleConnDuration: cfg.KeepAlive.BackendTimeout,
-			ReadTimeout:         cfg.Server.ReadTimeout,
-			WriteTimeout:        cfg.Server.WriteTimeout,
-
-			NoDefaultUserAgentHeader:      true,
-			DisablePathNormalizing:        true,
-			DisableHeaderNamesNormalizing: true,
-
-			MaxConnDuration: 90 * time.Second,
-			ReadBufferSize:  4 * 1024,
-			WriteBufferSize: 4 * 1024,
-
-			Dial: (&fasthttp.TCPDialer{
-				Concurrency:      cfg.Server.Concurrency,
-				DNSCacheDuration: 1 * time.Hour,
-			}).Dial,
-		}
-
-		if cfg.PreWarm.Enabled {
-			preWarmCount := cfg.PreWarm.RequestsPerBackend
-			var wg sync.WaitGroup
-			wg.Add(preWarmCount)
-
-			for range preWarmCount {
-				go func() {
-					defer wg.Done()
-					// Create a dummy request to establish connection and keep it alive
-					req := fasthttp.AcquireRequest()
-					resp := fasthttp.AcquireResponse()
-
-					req.SetHost(u.Host)
-					req.Header.SetMethod(fasthttp.MethodHead)
-
-					if err := client.Do(req, resp); err != nil {
-						logger.Warn("failed to pre-warm connection",
-							"backend", backend,
-							"error", err,
-							"request", req.String(),
-						)
-					}
-
-					fasthttp.ReleaseRequest(req)
-					fasthttp.ReleaseResponse(resp)
-				}()
-			}
-
-			wg.Wait()
-
-			if cfg.Logging.Enabled {
-				logger.Info("pre-warmed connections",
-					"backend", backend,
-					"count", preWarmCount,
-				)
-			}
+			Addr: backend,
+			Dial: func(addr string) (net.Conn, error) {
+				return net.DialTimeout("unix", addr, 5*time.Second)
+			},
 		}
 
 		clients[backend] = client
 	}
 
 	p := &Proxy{
-		config:      cfg,
-		backends:    cfg.Backends,
-		clients:     clients,
-		backendURLs: backendURLs,
-		logger:      logger,
+		config:  cfg,
+		clients: clients,
+		logger:  logger,
 	}
 
 	p.server = &fasthttp.Server{
-		Handler:                       p.handleRequest,
-		ReadTimeout:                   cfg.Server.ReadTimeout,
-		WriteTimeout:                  cfg.Server.WriteTimeout,
-		MaxConnsPerIP:                 cfg.Server.MaxConnectionsPerIP,
-		MaxRequestsPerConn:            cfg.KeepAlive.MaxRequestsPerConn,
-		DisableHeaderNamesNormalizing: true,
-		ReduceMemoryUsage:             true,
-		TCPKeepalive:                  cfg.KeepAlive.Enabled,
-		TCPKeepalivePeriod:            cfg.KeepAlive.ClientTimeout,
-		NoDefaultServerHeader:         true,
-		NoDefaultContentType:          true,
-		NoDefaultDate:                 true,
-		DisablePreParseMultipartForm:  true,
-		StreamRequestBody:             true,
-		GetOnly:                       false,
-
-		Concurrency:        cfg.Server.Concurrency,
-		ReadBufferSize:     32 * 1024,
-		WriteBufferSize:    32 * 1024,
-		MaxRequestBodySize: 512 * 1024,
-		DisableKeepalive:   false,
-		IdleTimeout:        10 * time.Second,
-
-		CloseOnShutdown:       true,
-		SecureErrorLogMessage: true,
+		Handler: p.handleRequest,
 	}
 
 	return p, nil
@@ -164,9 +68,6 @@ func (p *Proxy) handleRequest(ctx *fasthttp.RequestCtx) {
 
 	req := &ctx.Request
 	resp := &ctx.Response
-
-	backendURL := p.backendURLs[backend]
-	req.SetHost(backendURL.Host)
 
 	if err := client.Do(req, resp); err != nil {
 		if p.config.Logging.Enabled {
@@ -189,8 +90,8 @@ func (p *Proxy) handleRequest(ctx *fasthttp.RequestCtx) {
 func (p *Proxy) getNextBackend() string {
 	// Fast modulo operation using bitwise AND when len is power of 2
 	next := atomic.AddUint32(&p.currentBackend, 1)
-	idx := int(next % uint32(len(p.backends)))
-	return p.backends[idx]
+	idx := int(next % uint32(len(p.config.BackendSockets)))
+	return p.config.BackendSockets[idx]
 }
 
 // Start begins accepting incoming connections and forwarding requests
@@ -200,7 +101,7 @@ func (p *Proxy) Start() error {
 	if p.config.Logging.Enabled {
 		p.logger.Info("starting proxy server",
 			"address", p.config.Server.ListenAddress,
-			"backends", p.backends,
+			"backends", p.config.BackendSockets,
 		)
 	}
 	return p.server.ListenAndServe(p.config.Server.ListenAddress)

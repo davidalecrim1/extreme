@@ -5,7 +5,6 @@ package config
 
 import (
 	"log/slog"
-	"time"
 
 	"github.com/spf13/viper"
 )
@@ -15,41 +14,15 @@ import (
 // including server parameters, keep-alive settings, backend configurations,
 // connection pooling options, and logging preferences.
 type Config struct {
-	Server         ServerConfig         `mapstructure:"server"`
-	KeepAlive      KeepAliveConfig      `mapstructure:"keep_alive"`
-	Backends       []string             `mapstructure:"backends"`
-	ConnectionPool ConnectionPoolConfig `mapstructure:"connection_pool"`
-	Logging        LoggingConfig        `mapstructure:"logging"`
-	PreWarm        PreWarmConfig        `mapstructure:"pre_warm"`
+	Server         ServerConfig  `mapstructure:"server"`
+	BackendSockets []string      `mapstructure:"backends"`
+	Logging        LoggingConfig `mapstructure:"logging"`
 }
 
 // ServerConfig defines the core server settings including address binding,
 // timeouts, and connection limits.
 type ServerConfig struct {
-	ListenAddress       string        `mapstructure:"listen_address"`
-	ReadTimeout         time.Duration `mapstructure:"read_timeout"`
-	WriteTimeout        time.Duration `mapstructure:"write_timeout"`
-	MaxConnectionsPerIP int           `mapstructure:"max_connections_per_ip"`
-	Concurrency         int           `mapstructure:"concurrency"`
-}
-
-// KeepAliveConfig contains settings for connection keep-alive behavior
-// for both client and backend connections. The Enabled and ClientTimeout
-// settings apply to incoming client connections, while BackendTimeout
-// controls idle connection timeouts for backend connections.
-type KeepAliveConfig struct {
-	Enabled            bool          `mapstructure:"enabled"`
-	ClientTimeout      time.Duration `mapstructure:"client_timeout"`
-	BackendTimeout     time.Duration `mapstructure:"backend_timeout"`
-	MaxRequestsPerConn int           `mapstructure:"max_requests_per_conn"`
-}
-
-// ConnectionPoolConfig defines the connection pooling settings
-// for managing connections to backend servers. MaxConnsPerHost
-// limits the total number of connections that can be established
-// to each backend host.
-type ConnectionPoolConfig struct {
-	MaxConnsPerHost int `mapstructure:"max_conns_per_host"`
+	ListenAddress string `mapstructure:"listen_address"`
 }
 
 // LoggingConfig contains settings for controlling the proxy's logging behavior,
@@ -57,12 +30,6 @@ type ConnectionPoolConfig struct {
 type LoggingConfig struct {
 	Enabled bool   `mapstructure:"enabled"`
 	Level   string `mapstructure:"level"`
-}
-
-// PreWarmConfig contains settings for pre-warming connections to backend servers.
-type PreWarmConfig struct {
-	Enabled            bool `mapstructure:"enabled"`
-	RequestsPerBackend int  `mapstructure:"requests_per_backend"`
 }
 
 // GetLevel converts the string log level from the configuration
