@@ -36,6 +36,38 @@ func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 			Dial: func(addr string) (net.Conn, error) {
 				return net.DialTimeout("unix", addr, 5*time.Second)
 			},
+			MaxIdleConnDuration: cfg.Server.KeepAliveTimeout,
+			ReadTimeout:         cfg.Server.ReadTimeout,
+			WriteTimeout:        cfg.Server.WriteTimeout,
+
+			NoDefaultUserAgentHeader:      true,
+			DisablePathNormalizing:        true,
+			DisableHeaderNamesNormalizing: true,
+		}
+
+		if cfg.PreWarm.Enabled {
+			preWarmCount := cfg.PreWarm.RequestsPerBackend
+			for range preWarmCount {
+				go func() {
+					// Create a dummy request to establish connection and keep it alive
+					req := fasthttp.AcquireRequest()
+					resp := fasthttp.AcquireResponse()
+
+					req.SetRequestURI("/")
+					req.SetHost(client.Addr) // dummy host because of unix sockets
+					req.Header.SetMethod(fasthttp.MethodHead)
+
+					if err := client.Do(req, resp); err != nil {
+						logger.Warn("failed to pre-warm connection",
+							"backend", backend,
+							"error", err,
+						)
+					}
+
+					fasthttp.ReleaseRequest(req)
+					fasthttp.ReleaseResponse(resp)
+				}()
+			}
 		}
 
 		clients[backend] = client
