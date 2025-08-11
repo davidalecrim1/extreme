@@ -5,6 +5,7 @@ package config
 
 import (
 	"log/slog"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -17,12 +18,24 @@ type Config struct {
 	Server         ServerConfig  `mapstructure:"server"`
 	BackendSockets []string      `mapstructure:"backends"`
 	Logging        LoggingConfig `mapstructure:"logging"`
+	PreWarm        PreWarmConfig `mapstructure:"pre_warm"`
 }
 
 // ServerConfig defines the core server settings including address binding,
 // timeouts, and connection limits.
 type ServerConfig struct {
-	ListenAddress string `mapstructure:"listen_address"`
+	ListenAddress    string        `mapstructure:"listen_address"`
+	KeepAliveTimeout time.Duration `mapstructure:"keep_alive_timeout"`
+	ReadTimeout      time.Duration `mapstructure:"read_timeout"`
+	WriteTimeout     time.Duration `mapstructure:"write_timeout"`
+}
+
+// PreWarmConfig defines the settings for pre-warming connections to backends.
+// It includes whether pre-warming is enabled and the number of requests to send
+// to each backend during pre-warming.
+type PreWarmConfig struct {
+	Enabled            bool `mapstructure:"enabled"`
+	RequestsPerBackend int  `mapstructure:"requests_per_backend"`
 }
 
 // LoggingConfig contains settings for controlling the proxy's logging behavior,
