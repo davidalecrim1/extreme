@@ -1,4 +1,4 @@
-VERSION=v1.1.2
+VERSION=v1.2.0-backend-api-aware
 
 build:
 	docker build -t davidalecrim1/extreme-proxy:$(VERSION) .

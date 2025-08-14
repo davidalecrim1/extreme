@@ -6,6 +6,7 @@ package proxy
 import (
 	"log/slog"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -47,15 +48,19 @@ func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 
 		if cfg.PreWarm.Enabled {
 			preWarmCount := cfg.PreWarm.RequestsPerBackend
+			var wg sync.WaitGroup
+
 			for range preWarmCount {
+				wg.Add(1)
 				go func() {
+					defer wg.Done()
 					// Create a dummy request to establish connection and keep it alive
 					req := fasthttp.AcquireRequest()
 					resp := fasthttp.AcquireResponse()
 
-					req.SetRequestURI("/")
+					req.SetRequestURI("/payments-summary")
 					req.SetHost(client.Addr) // dummy host because of unix sockets
-					req.Header.SetMethod(fasthttp.MethodHead)
+					req.Header.SetMethod(fasthttp.MethodGet)
 
 					if err := client.Do(req, resp); err != nil {
 						logger.Warn("failed to pre-warm connection",
@@ -68,6 +73,8 @@ func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 					fasthttp.ReleaseResponse(resp)
 				}()
 			}
+
+			wg.Wait()
 		}
 
 		clients[backend] = client
@@ -87,6 +94,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*Proxy, error) {
 }
 
 func (p *Proxy) handleRequest(ctx *fasthttp.RequestCtx) {
+	start := time.Now()
 	backend := p.getNextBackend()
 	client := p.clients[backend]
 
@@ -107,14 +115,26 @@ func (p *Proxy) handleRequest(ctx *fasthttp.RequestCtx) {
 				"error", err,
 				"backend", backend,
 				"request", map[string]any{
-					"method": string(ctx.Method()),
-					"path":   string(ctx.Path()),
+					"method":   string(ctx.Method()),
+					"path":     string(ctx.Path()),
+					"duration": time.Since(start),
 				},
 			)
 		}
 		ctx.SetStatusCode(fasthttp.StatusBadGateway)
 		ctx.SetBodyString("Gateway Error")
 		return
+	}
+
+	if p.config.Logging.Enabled {
+		p.logger.Debug("request processed",
+			"backend", backend,
+			"request", map[string]any{
+				"method":   string(ctx.Method()),
+				"path":     string(ctx.Path()),
+				"duration": time.Since(start),
+			},
+		)
 	}
 }
 
